@@ -35,4 +35,26 @@ class Env {
         self::load();
         return isset(self::$vars[$key]) ? self::$vars[$key] : $default;
     }
+
+    /**
+     * Fetch a required value, enforcing a length constraint. Returns the value
+     * only when it is present and correctly sized; otherwise responds with a
+     * 500 and stops, so a missing/misconfigured value can never fall back to a
+     * built-in default. Pass $exactLen for a fixed length, otherwise $minLen.
+     */
+    public static function requireValue($key, $minLen = 0, $exactLen = null) {
+        $v = self::get($key, '');
+        $ok = is_string($v) && $v !== '';
+        if ($ok) {
+            $len = strlen($v);
+            $ok = ($exactLen !== null) ? ($len === $exactLen) : ($len >= $minLen);
+        }
+        if (!$ok) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Server configuration error.']);
+            exit;
+        }
+        return $v;
+    }
 }

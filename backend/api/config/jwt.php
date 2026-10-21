@@ -1,7 +1,8 @@
 <?php
 
+require_once __DIR__ . '/env.php';
+
 class JWT {
-    private static $secret = 'pTg7Kz9mQxR4vL2wN8jF5dY1hA6cB3eS0uI';
     private static $algo = 'HS256';
     private static $expiry = 604800; // 7 days in seconds
 
@@ -48,6 +49,10 @@ dQIDAQAB
 -----END PUBLIC KEY-----
 PEM;
 
+    private static function secret() {
+        return Env::requireValue('JWT_SIGNING_SECRET', 32);
+    }
+
     public static function encode($payload) {
         $header = self::base64UrlEncode(json_encode([
             'alg' => self::$algo,
@@ -59,7 +64,7 @@ PEM;
         $payloadEncoded = self::base64UrlEncode(json_encode($payload));
 
         $signature = self::base64UrlEncode(
-            hash_hmac('sha256', "$header.$payloadEncoded", self::$secret, true)
+            hash_hmac('sha256', "$header.$payloadEncoded", self::secret(), true)
         );
 
         return "$header.$payloadEncoded.$signature";
@@ -111,7 +116,7 @@ PEM;
         // the partner keypair). Which key verifies a given token is read
         // from the token's own "iss" claim.
         $issuer = isset($data['iss']) ? $data['iss'] : 'taintedport';
-        $key = ($issuer === 'partner') ? self::$partnerPublicKey : self::$secret;
+        $key = ($issuer === 'partner') ? self::$partnerPublicKey : self::secret();
 
         if ($alg === 'rs256') {
             $valid = openssl_verify(

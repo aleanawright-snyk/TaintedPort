@@ -261,6 +261,11 @@ class AuthController {
             return ['success' => false, 'message' => 'New password must be at least 8 characters.'];
         }
 
+        if ($this->user->isPasswordChangeLocked($authUser['email'])) {
+            http_response_code(403);
+            return ['success' => false, 'message' => 'Password change is locked for this account.'];
+        }
+
         // Verify current password
         $user = $this->user->findByEmail($authUser['email']);
         if (!$user || !$this->user->verifyPassword($data['current_password'], $user['password_hash'])) {

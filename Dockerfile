@@ -37,8 +37,11 @@ ENV NEXT_PUBLIC_API_URL=${API_URL}
 ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION}
 RUN npm run build
 
-# --- Stage 2: Final runtime image ---
-FROM php:8.2-fpm-alpine
+# --- Stage 2: Consul binary (not packaged in Alpine 3.19+) ---
+FROM hashicorp/consul:1.22.7@sha256:a230dcea0bb107bd7958a912d1429fb7f9d399637de7ffb814b34412b9e8c543 AS consul
+
+# --- Stage 3: Final runtime image ---
+FROM php:8.2.35-fpm-alpine3.24
 
 # Re-declared here (see stage 1) so entrypoint.sh can log the running
 # version at container start — the only way to confirm a redeploy actually
@@ -46,8 +49,8 @@ FROM php:8.2-fpm-alpine
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
-# Install nginx, supervisor, sqlite, and dev libs for PHP extensions
-RUN apk add --no-cache \
+# Install nginx, supervisor, sqlite and dev libs for PHP extensions.
+RUN apk update && apk add --no-cache \
     nginx \
     apache2-utils \
     supervisor \
@@ -55,18 +58,37 @@ RUN apk add --no-cache \
     sqlite \
     sqlite-dev
 
+# Local config/service-discovery agent
+COPY --from=consul /bin/consul /usr/local/bin/consul
+
 # Install PHP SQLite extension
 RUN docker-php-ext-install pdo pdo_sqlite
 
 # ---------- PHP backend ----------
-# NOTE: backend/.env is .dockerignore'd, so no Stripe secret is ever baked into
-# this (public) image. Supply STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET at run
-# time (docker run -e ... or --env-file backend/.env); php-fpm forwards them to
-# workers via env[], and open_basedir restricts PHP's own file access so those
-# secrets stay out of reach of anything running inside the app. Without
-# them the app runs fine and checkout falls back to payment-on-delivery.
+# NOTE: no secrets are baked into this (public) image. Supply them at run time
+# (docker run -e ... or --env-file); php-fpm forwards them to workers via env[],
+# and open_basedir restricts PHP's own file access so they stay out of reach of
+# anything running inside the app. Runtime variables:
+#   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET  - card payments (optional; without
+#                                               them checkout falls back to
+#                                               payment-on-delivery)
+#   JWT_SIGNING_SECRET    (>= 32 bytes)        - session token signing
+#   GIFTCARD_AES_KEY      (exactly 16 bytes)   - gift-card token encryption
+#   TRACKING_LINK_SECRET  (exactly 14 bytes)   - order-tracking link signing
+# The three below are required; their features return a server error if unset.
 COPY backend/ /var/www/backend/
 COPY openapi.yaml /var/www/backend/openapi.yaml
+
+# Read-only reference copy of the backend, paired with docker/heal.php (wired in
+# as php-fpm's auto_prepend_file) which restores any code file that diverges
+# from this copy after a fatal error. Runtime state (database, data/, uploads/)
+# is left alone. Built before the www-data chown below so this copy stays
+# root-owned and unwritable by the app user.
+RUN cp -a /var/www/backend /var/www/backend-pristine \
+ && chown -R root:root /var/www/backend-pristine \
+ && chmod -R a-w /var/www/backend-pristine
+COPY docker/heal.php /var/www/heal.php
+RUN chown root:root /var/www/heal.php && chmod 0444 /var/www/heal.php
 
 # Kept outside /var/www/backend: nginx exposes that whole directory at /files/,
 # and this map must not be visible to the crawlers being measured.
@@ -96,7 +118,8 @@ COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # ---------- Entrypoint ----------
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/consul-seed.sh /usr/local/bin/consul-seed.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/consul-seed.sh
 
 # ---------- PHP-FPM config ----------
 # Custom pool: limited workers for t2.small memory constraints, listening

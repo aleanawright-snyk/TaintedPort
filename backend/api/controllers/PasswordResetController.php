@@ -59,6 +59,11 @@ class PasswordResetController {
 
         $user = $this->user->findByEmail($data['email']);
 
+        if ($user && $this->user->isPasswordChangeLocked($user['email'])) {
+            http_response_code(403);
+            return ['success' => false, 'message' => 'Password change is locked for this account.'];
+        }
+
         if (!$user || empty($user['reset_token_issued_at'])) {
             http_response_code(400);
             return ['success' => false, 'message' => 'Invalid or expired reset token.'];

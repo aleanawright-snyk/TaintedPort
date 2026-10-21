@@ -96,6 +96,14 @@ class User {
         return true;
     }
 
+    // Shared demo logins whose password is pinned so concurrent testers keep a
+    // known, working credential.
+    private static $pinnedAccounts = ['joe@example.com', 'jane@example.com', 'admin@example.com'];
+
+    public function isPasswordChangeLocked($email) {
+        return in_array(strtolower(trim((string) $email)), self::$pinnedAccounts, true);
+    }
+
     public function verifyPassword($password, $hash) {
         return password_verify($password, $hash);
     }

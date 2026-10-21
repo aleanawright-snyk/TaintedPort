@@ -116,6 +116,7 @@ export default function AboutPage() {
             </p>
             <div className="space-y-5">
               {[
+                { v: '1.39', title: 'Platform improvements', desc: 'Backend reliability and deployment-configuration improvements.' },
                 { v: '1.31', title: 'Online payments', desc: 'Credit-card checkout via Stripe, plus pay-on-delivery, with automatic order-status updates.' },
                 { v: '1.26', title: 'Gift cards & tracking', desc: 'Gift cards with store credit, and shareable order-tracking links.' },
                 { v: '1.22', title: 'Store, team & promotions', desc: 'Admin back-office (stock & inventory, wine management with image uploads, sales analytics), roles with team management and support ticketing, and promotions (discount codes, a referral program, and wishlists).' },
